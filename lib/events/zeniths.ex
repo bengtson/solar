@@ -1,5 +1,5 @@
 defmodule Zeniths do
-  """
+  @moduledoc """
   Provides values for the various definitions for sunrise and sunset. These are referred to as twilight definitions.
 
   - Astonomical is when the sun is 18 degrees below horizon.

@@ -1,42 +1,38 @@
 defmodule LatLong do
-
   @moduledoc """
-  Signed degrees format (DDD.dddd)
+  A really nice parsing of all the ways that a longitude or latitude may be specified. Comments and suggestions on how this might have been better written are welcome. The following lat long formats are allowed ... all are equivalent:
 
-  A latitude or longitude with 8 decimal places pinpoints a location to within 1 millimeter,( 1/16 inch).
+  - 38.8977, -77.0365
+  - 38° 53' 51.635" N, 77° 2' 11.507" W
+  - 38 53 51.635 N, 77 2 11.507 W
+  - N 38° 53' 51.635", W 77° 2' 11.507"
+  - N 38 53 51.635, W 77 2 11.507
+  - 38 53 51.635, -77 2 11.507
 
-  Precede South latitudes and West longitudes with a minus sign.
-  Latitudes range from -90 to 90.
-  Longitudes range from -180 to 180.
-  41.25 and -120.9762
-  -31.96 and 115.84
-  90 and 0 (North Pole)
-  DMS + compass direction formats
+  And some other examples that are for different locations:
 
-  These formats use degrees, minutes, and seconds. For the following formats:
-  Latitudes range from 0 to 90.
-  Longitudes range from 0 to 180.
-  Use N, S, E or W as either the first or last character, which represents a compass direction North, South, East or West.
-  The last degree, minute, or second of a latitude or longitude may contain a decimal portion.
-  Degrees minutes seconds formats (DDD MM SS + compass direction)
+  - -31.96, 115.84
+  - 90, 0 (North Pole)
+  - 41 25 01N, 120 58 57W
+  - 41°25'01"N, 120°58'57"W
+  - S17 33 08.352, W69 01 29.74
+  - 41 25N, 120 58W
+  - 41°25'N, 120°58'W
+  - N41 25.117, W120 58.292
+  - 41 N, 120 W
+  - 41°N, 120°W
+  - N41.092, W120.8362
+  - 90S, 0E (South Pole)
 
-  41 25 01N and 120 58 57W
-  41°25'01"N and 120°58'57"W
-  S17 33 08.352 and W69 01 29.74
+  In addition, the latitude may be in one format and the longitude in another.
 
-  Degrees minutes formats (DDD MM + compass direction)
+  ## Parsing
 
-  41 25N and 120 58W
-  41°25'N and 120°58'W
-  N41 25.117 and W120 58.292 (Common geocoding format)
+  The strings are parsed with a state machine checking the next part of the string, saving the various parts in a map. Each pass of the state machine provides the next Float if available and the next grapheme. The state machine lets the call fall to the appropriate state handler and then the next part is examined until there isn't anything left in the string.
+  """
 
-  Degrees only formats (DDD + compass direction)
-
-  41 N and 120 W
-  41°N and 120°W
-  N41.092 and W120.8362
-  90S and 0E (South Pole)
-
+  @doc """
+  Parses string representations of a latitude and longitude into decimals. The latitude and longitude must be provided as string arguments. The return is { :ok, latitude, longitude } or { :error, message }.
   """
   def to_decimal_position latitude, longitude do
     latitude_value = part_to_decimal_position latitude, :latitude
@@ -54,22 +50,27 @@ defmodule LatLong do
     {latitude_value, longitude_value}
   end
 
+  # Called to convert latitude or longitude. 'type' is either :latitude or
+  # :longitude. Angle is the string of the latitude or longitude.
+  # Starts the state machine by calling next_part with the string and state.
   defp part_to_decimal_position angle, type do
     state = %{ sign: 1, degrees: 0, minutes: 0, seconds: 0, field: :degrees, type: type }
     next_part angle, state
   end
 
-  # If string is empty, return the parsed value.
+  # If string is empty, calcualte and return the parsed value.
   defp next_part "", state do
     (state[:degrees] + state[:minutes] / 60.0 + state[:seconds] / 3600.0) * state[:sign]
   end
 
-  # Get possible value at next string position and next grapheme.
+  # Get possible value at next string position and next grapheme. Then drop
+  # it into the state machine.
   defp next_part string, state do
     next_state Float.parse(string), String.next_grapheme(string), state
   end
 
-  # Just ignore spaces. They are delimiters for float parsing but toss.
+  # Just ignore spaces. They are delimiters for float parsing already used
+  # so toss.
   defp next_state :error, {" ", tail}, state do
     next_part tail, state
   end
@@ -90,12 +91,12 @@ defmodule LatLong do
   end
 
   # Capture a minus sign but only if a valid float was found.
-  defp next_state { value, _ }, {"-", tail}, state do
+  defp next_state { _, _ }, {"-", tail}, state do
     next_part tail, Map.merge(state, %{sign: -1})
   end
 
   # Capture a plus sign but only if a valid float was found.
-  defp next_state { value, _ }, {"+", tail}, state do
+  defp next_state { _, _ }, {"+", tail}, state do
     next_part tail, Map.merge(state, %{sign: 1})
   end
 
