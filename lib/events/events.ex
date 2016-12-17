@@ -1,19 +1,59 @@
 defmodule Solar.Events do
+  @moduledoc """
+  The `Solar.Events` module provides the calculations for sunrise and sunset
+  times. This is likely to be refactored as other events are added.
+  """
 
   @doc """
-    location = LatLong.to_decimal_position "39.1373 ", "-88.65"
-    Timex.today
-    Date.new(2016, 11, 29)
-    timezone "America/Chicago"
-  """
-  def sunrise_for_date zenith, location, date, timezone do
-    sun_event_for_date :rise, zenith, location, date, timezone
-  end
-  def sunset_for_date zenith, location, date, timezone do
-    sun_event_for_date :set, zenith, location, date, timezone
-  end
+  The event function takes a minimum of two parameters, the event of interest
+  which can be either :rise or :set and the latitude and longitude. Additionally
+  a list of options can be provided as follows:
 
-  def sun_event_for_date type, zenith, location, date, timezone do
+    * `date:` allows a value of either `:today` or an Elixir date. The default
+      if this option is not provided is the current day.
+    * `zenith:` can be set to define the sunrise or sunset. See the `Zeniths`
+      module for a set of standard zeniths that are used. The default if a
+      zenith is not provided is `:official` most commonly used for sunrise and
+      sunset.
+    * `timezone:` can be provided and should be a standard timezone identifier
+      such as "America/Chicago". If the option is not provided, the timezone is
+      taken from the system and used.
+
+  ## Examples
+
+  The following, with out any options and run on December 25:
+
+      iex> Solar.event (:rise, {39.1371, -88.65})
+      {:ok,~T[07:12:26]}
+
+      iex> Solar.event (:set, {39.1371, -88.65})
+      {:ok,~T[16:38:01]}
+
+  The coordinates are for Lake Sara, IL where sunrise on this day will be at 7:12:26AM and sunset will be at 4:38:01PM.
+  """
+  @type latitude :: number
+  @type longitude :: number
+  @type message :: String.t
+
+  @spec event(:rise | :set, {latitude, longitude}) ::
+      {:ok, Time.t} |
+      {:error, message}
+  def event(type, location, opts \\ []) do
+
+    zenith = case opts[:zenith] do
+      nil -> Zeniths.official
+      _ -> opts[:zenith]
+    end
+    date = case opts[:date] do
+      :today -> Timex.to_date(Timex.local())
+      nil -> Timex.to_date(Timex.local())
+      _ -> opts[:date]
+    end
+    timezone = case opts[:timezone] do
+      :local -> Timex.local().timezone
+      nil -> Timex.local().time_zone
+      _ -> opts[:timezone]
+    end
 
     { latitude, longitude } = location
     state = %{type: type, zenith: zenith, location: location,
@@ -102,7 +142,7 @@ defmodule Solar.Events do
     cos_sun_local_hour =
       (cos_zenith - sin_sun_declination * sin_latitude) /
       (cos_sun_declination * cos_latitude)
-    return = cond do
+    cond do
       cos_sun_local_hour < -1.0 -> {:error, "cos_sun_local_hour < -1.0"}
       cos_sun_local_hour > +1.0 -> {:error, "cos_sun_local_hour > +1.0"}
       true -> { :ok, Map.put(state, :cos_sun_local_hour, cos_sun_local_hour)}
@@ -154,7 +194,14 @@ defmodule Solar.Events do
     tzi = Timex.timezone(state[:timezone], state[:date])
     offset_minutes = Timex.Timezone.total_offset(tzi)
     local_time = utc_time + offset_minutes/3600.0
-    { :ok, Map.put(state, :local_time, local_time)}
+    time = local_time
+    hour = Kernel.trunc(time)
+    tmins = (time-hour) * 60
+    minute = Kernel.trunc(tmins)
+    tsecs = (tmins-minute) * 60
+    seconds = Kernel.trunc(tsecs)
+    time = Time.new(hour,minute,seconds)
+    { :ok, Map.put(state, :local_time, time)}
   end
 
   # Converts degrees to radians.
@@ -166,4 +213,24 @@ defmodule Solar.Events do
     radians * 180.0 / :math.pi
   end
 
+  @doc """
+  Calculates the hours of daylight returning as a time with hours, minutes and seconds.
+  """
+  def daylight rise, set do
+    hours_to_time(time_to_hours(set) - time_to_hours(rise))
+  end
+
+  defp time_to_hours time do
+    time.hour + time.minute/60.0 + time.second / (60.0 * 60.0)
+  end
+
+  defp hours_to_time hours do
+    h = Kernel.trunc(hours)
+    value = (hours - h) * 60
+    m = Kernel.trunc(value)
+    value = (value - m) * 60
+    s = Kernel.trunc(value)
+    { :ok, time} = Time.new(h,m,s)
+    time
+  end
 end
